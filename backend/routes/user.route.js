@@ -4,6 +4,9 @@ const jwt = require("jsonwebtoken")
 const bcrypt = require("bcrypt")
 const userRouter = express.Router()
 const {User} = require("../model/user.model.js")
+const Redis = require("ioredis")
+require("dotenv").config()
+const {client} = require("../config/redis")
 userRouter.post("/register",async(req,res)=>{
     const {first_name,middle_name,last_name,email,mobile_number,password, current_address, permanent_address} = req.body
     try{
@@ -38,10 +41,42 @@ userRouter.post("/login",async(req,res)=>{
         
         const token = jwt.sign({ userId: user._id }, process.env.token, { expiresIn: "1h" });
         const refreshToken =jwt.sign({ userId: user._id }, process.env.refreshToken, { expiresIn: "7d" });
-
+        client.mset("token",token,'EX', 24 * 60 * 60,(err,reply)=>{
+            if (err) {
+                console.error("Error storing access token in Redis:", err);
+                return res.status(500).json({ msg: "Internal server error" });
+            }
+            else{
+                console.log(reply)
+            }
+    
+        })
+        client.mset("refreshToken",refreshToken,'EX',7*24*60*60,(err,reply)=>{
+            if (err) {
+                console.error("Error storing access token in Redis:", err);
+                return res.status(500).json({ msg: "Internal server error" });
+            }
+            else{
+                console.log(reply)
+            }
+        })
         res.json({ msg: "Login successful", token,refreshToken });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 })
+userRouter.get("/logout",(req,res)=>{
+    client.get("token").then((result) => {
+         console.log(result); // Prints "value"
+         const decoded = jwt.verify(result,process.env.token)
+    
+     
+         if(!decoded){
+               res.status(400).send({"msg":"Access not granted"})
+         }
+         client.mset("blackList",decoded.userId)
+         res.status(200).send("Logged Out")
+       });
+   })
+  
 module.exports = {userRouter}
